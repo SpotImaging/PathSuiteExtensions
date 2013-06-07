@@ -4,6 +4,7 @@
 #include <vector>
 #include <algorithm>
 #include <locale>
+#include <functional>
 
 /// Summary
 ///   Rounds floating point numbers to nearest integer, where ties round away from zero
@@ -140,6 +141,97 @@ inline StringType JoinWith(InputIterator first, InputIterator last, const JoinTy
             output.append(joinWith).append(*(first++));
     }
     return output;
+}
+
+
+inline void TrimLeft(std::string& toTrim)
+{
+    toTrim.erase(toTrim.begin(), std::find_if_not(toTrim.begin(), toTrim.end(), [](char c) { return std::isspace(c, std::locale::classic());}));
+}
+
+inline void TrimRight(std::string& toTrim)
+{
+    std::string::iterator last = std::find_if_not(toTrim.rbegin(), toTrim.rend(), [](char c) { return std::isspace(c, std::locale::classic());}).base();
+    toTrim.erase(last, toTrim.end());
+}
+
+inline void Trim(std::string& toTrim)
+{
+    TrimRight(toTrim);
+    TrimLeft(toTrim);
+}
+
+inline std::string TrimLeftCopy(std::string toTrim)
+{
+    TrimLeft(toTrim);
+    return toTrim;
+}
+
+inline std::string TrimRightCopy(std::string toTrim)
+{
+    TrimRight(toTrim);
+    return toTrim;
+}
+
+inline std::string TrimCopy(std::string toTrim)
+{
+    TrimRight(toTrim);
+    TrimLeft(toTrim);
+    return toTrim;
+}
+
+
+
+inline int AlphaToInt(const char *pszValue)
+{
+   int retVal = 0;
+   int mult = 1;
+   size_t remainingChars = strlen(pszValue);
+   const char *pcChar = pszValue + remainingChars - 1;
+   while (remainingChars)
+   {
+      retVal += ((((*pcChar & 0xdf) - 'A') + 1) * mult);
+      if (retVal < 0)
+          throw std::overflow_error("The alpha encoded value cannot be converted to an integer");
+      mult *= 26;
+      pcChar --;
+      remainingChars --;
+   }
+   return(retVal);
+}
+
+inline int AlphaToInt(const std::string& value)
+{
+    return AlphaToInt(value.c_str());
+}
+
+// Positive non-zero numbers only. A value less than or equal to zero will return an empty string.
+inline std::string IntToAlpha(int value)
+{
+    std::string result;
+    if (value <= 0)
+        return result;
+    int remainder = value % 26;
+    if (remainder)
+    {
+        result.push_back( (char)(('A' - 1) + remainder) );
+        value -= remainder;
+    }
+    else
+    {
+        result.push_back('Z');
+        value -= 26;
+    }
+    int divisor = 26;
+    while (value)
+    {
+        remainder = (value / divisor) % 26;
+        result.push_back( (char)(('A' - 1) + remainder) );
+        value -= (remainder * divisor);
+        divisor *= 26;
+    }
+    std::reverse(result.begin(), result.end());
+    return result;
 }
 
 

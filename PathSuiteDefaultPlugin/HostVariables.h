@@ -183,6 +183,15 @@ namespace internal // implementation specific namespace not for general usage
     }
 
 
+    /// Summary:
+    ///     Saves the current value of a global variable to a file.
+    /// Arguments:
+    ///     name - A null terminated string of the name of the target variable
+    ///     fileName - A null terminated string for the target file path.
+    /// Returns:
+    ///     void
+    /// Throws:
+    ///     runtime_error if the host application was unable to save the variable value
     static inline void SaveVariable(const char* name, const char* fileName)
     {
         SpotPluginApi::msg_save_recall_variable_t saveMsg;
@@ -192,6 +201,15 @@ namespace internal // implementation specific namespace not for general usage
             throw std::runtime_error(std::string("Error saving variable (").append(name).append(") to the file ").append(fileName));
     }
 
+    /// Summary:
+    ///     Restores the value of a global variable from a file that was created previously.
+    /// Arguments:
+    ///     name - A null terminated string of the name of the target variable
+    ///     fileName - A null terminated string for the target file path.
+    /// Returns:
+    ///     void
+    /// Throws:
+    ///     runtime_error if the host application was unable to restore the variable value
     static inline void RestoreVariableFromFile(const char* name, const char* fileName)
     {
         SpotPluginApi::msg_save_recall_variable_t restoreMsg;
@@ -201,6 +219,8 @@ namespace internal // implementation specific namespace not for general usage
             throw std::runtime_error(std::string("Error reading variable (").append(name).append(") from file ").append(fileName));
     }
     
+    // Helper class to make the retrieval of macro arguments
+    // conform to an operational standard.
     struct Args
     {
         static std::string Text(int index)
@@ -231,6 +251,8 @@ namespace internal // implementation specific namespace not for general usage
         }
     };
 
+    // Helper class to make the macro return variables
+    // conform to an operational standard.
     struct Returns
     {
         static void Text(const std::string& value)
@@ -282,7 +304,7 @@ struct var_script_item_t  { bool readonly; const char* szName; HostInterop::Vari
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 /// Summary:
-///
+/// Abstract base class for all host variables
 class IVariable
 {
 protected:
@@ -296,12 +318,28 @@ protected:
         name(name), objectId(objectId), type(type), scope(scope), readOnly(readOnly) {}
 public:
     virtual ~IVariable() {};
+    
+    /// Get the name of the variable.
     const std::string& Name() const { return name; }
+    
+    /// Summary:
+    ///     Get the pointer to the named objectId
+    /// Returns:
+    ///     A shared_ptr to a string if the variable has an owning object associated to it.
+    ///     If the value is equal to nullptr then there is no owning object.
     const std::shared_ptr<std::string> ObjectId() const { return objectId; }
+    
+    /// The variable data type.
     HostInterop::VariableType Type() const { return type;}
+    
+    /// Returns the general scope for which the variable is related to. 
     HostInterop::ScopeFlags Scope() const { return scope; }
+    /// Return true if the variable can only be read.
     bool IsReadOnly() const { return readOnly; }
+    /// Returns true if the variable has no owning object associated to it.
     bool IsGlobal() const { return nullptr == objectId; }
+    /// Returns a human readable string describing the state of the object.
+    /// The default implementation should be overridden by derived classes.
     virtual std::string ToString() { return std::string(name).append(", type:").append(std::to_string((int)type)).append(", {undefined value}"); }
 };
     

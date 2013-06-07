@@ -31,6 +31,7 @@
 #include "EventSourceTypes.h"
 #include "HostEvents.h"
 #include "CallbackDispatcher.h"
+#include "CommonFileIo.h"
 
 
 // TODO: reference additional headers your program requires here
