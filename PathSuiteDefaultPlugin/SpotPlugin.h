@@ -196,7 +196,7 @@ struct msg_get_set_variable_t
    const char *DialogName;      // Name of the dialog which owns the variable (for embedded variables)
    union
    {
-      intmax_t _ignore; // insures that the enum has room to grow for different compliers
+      intmax_t _ignore; // ensures that the enum has room to grow for different compliers
       VariableType DataType;
    };
    union
