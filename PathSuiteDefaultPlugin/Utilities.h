@@ -52,13 +52,13 @@ inline FloatType round_to_nearest_awayzero(FloatType value )
 template <class InputIterator, class OutputIterator, class UnaryOperation, class UnaryPredicate>
 inline OutputIterator transform_if(InputIterator first, InputIterator last,  OutputIterator result, UnaryOperation op, UnaryPredicate pred)
 {
-   while (first != last)
-   {
-      if (pred(*first))
+    while (first != last)
+    {
+        if (pred(*first))
             *result++ = op(*first);
-      ++first;
-   }
-   return result;
+        ++first;
+    }
+    return result;
 }
 
 /// Summary
@@ -79,17 +79,17 @@ inline OutputIterator transform_if(InputIterator first, InputIterator last,  Out
 template<typename InputIterator, typename InsertType, typename OutputIterator>
 inline OutputIterator interlace_with(InputIterator first, InputIterator last, OutputIterator result, const InsertType& insert)
 {
-   if (first != last)
-      *result = *first;
-   if ((++first) == last)
-      ++result;
-   while (first != last)
-   {
-      *(++result) = insert;
-      *(++result) = *first;
-      ++first;
-   }
-   return result;
+    if (first != last)
+        *result = *first;
+    if ((++first) == last)
+        ++result;
+    while (first != last)
+    {
+        *(++result) = insert;
+        *(++result) = *first;
+        ++first;
+    }
+    return result;
 }
 
 
@@ -143,61 +143,67 @@ inline StringType JoinWith(InputIterator first, InputIterator last, const JoinTy
     return output;
 }
 
-
-inline void TrimLeft(std::string& toTrim)
+template<typename StringType>
+inline void TrimLeft(StringType& toTrim)
 {
-    toTrim.erase(toTrim.begin(), std::find_if_not(toTrim.begin(), toTrim.end(), [](char c) { return std::isspace(c, std::locale::classic());}));
+    toTrim.erase(toTrim.begin(), std::find_if_not(toTrim.begin(), toTrim.end(), [](StringType::value_type c) { return std::isspace(c, std::locale::classic());}));
 }
 
-inline void TrimRight(std::string& toTrim)
+template<typename StringType>
+inline void TrimRight(StringType& toTrim)
 {
-    std::string::iterator last = std::find_if_not(toTrim.rbegin(), toTrim.rend(), [](char c) { return std::isspace(c, std::locale::classic());}).base();
+    std::string::iterator last = std::find_if_not(toTrim.rbegin(), toTrim.rend(), [](StringType::value_type c) { return std::isspace(c, std::locale::classic());}).base();
     toTrim.erase(last, toTrim.end());
 }
 
-inline void Trim(std::string& toTrim)
+template<typename StringType>
+inline void Trim(StringType& toTrim)
 {
     TrimRight(toTrim);
     TrimLeft(toTrim);
 }
 
-inline std::string TrimLeftCopy(std::string toTrim)
+template<typename StringType>
+inline StringType TrimLeftCopy(StringType toTrim)
 {
     TrimLeft(toTrim);
     return toTrim;
 }
 
-inline std::string TrimRightCopy(std::string toTrim)
+template<typename StringType>
+inline StringType TrimRightCopy(StringType toTrim)
 {
     TrimRight(toTrim);
     return toTrim;
 }
 
-inline std::string TrimCopy(std::string toTrim)
+template<typename StringType>
+inline StringType TrimCopy(StringType toTrim)
 {
     TrimRight(toTrim);
     TrimLeft(toTrim);
     return toTrim;
 }
-
 
 
 inline int AlphaToInt(const char *pszValue)
 {
-   int retVal = 0;
-   int mult = 1;
-   size_t remainingChars = strlen(pszValue);
-   const char *pcChar = pszValue + remainingChars - 1;
-   while (remainingChars)
-   {
-      retVal += ((((*pcChar & 0xdf) - 'A') + 1) * mult);
-      if (retVal < 0)
-          throw std::overflow_error("The alpha encoded value cannot be converted to an integer");
-      mult *= 26;
-      pcChar --;
-      remainingChars --;
-   }
-   return(retVal);
+    int retVal = 0;
+    int mult = 1;
+    size_t remainingChars = strlen(pszValue);
+    const char *pcChar = pszValue + remainingChars - 1;
+    while (remainingChars)
+    {
+        if (!std::isalpha(*pcChar, std::locale::classic()))
+            throw std::invalid_argument(std::string("The string \"") + pszValue + "\" is not a valid alpha encoded integer value.");
+        retVal += ((((*pcChar & 0xdf) - 'A') + 1) * mult);
+        if (retVal < 0)
+            throw std::overflow_error("The alpha encoded value cannot be converted to an integer");
+        mult *= 26;
+        pcChar --;
+        remainingChars --;
+    }
+    return(retVal);
 }
 
 inline int AlphaToInt(const std::string& value)

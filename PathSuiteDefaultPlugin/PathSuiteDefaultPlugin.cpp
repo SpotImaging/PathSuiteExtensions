@@ -15,10 +15,18 @@
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ini_parser.hpp>
 
-const char* CONFIG_DIR_NAME                     = ".config";
-const char* CATALOG_MAIN_CONFIG_FILENAME        = "HEAD";
-const char* ACCESSION_PREFIX_FILENAME           = "AccessionPrefixes.txt";
+const std::string CONFIG_DIR_NAME                     = ".config";
+const std::string CATALOG_MAIN_CONFIG_FILENAME        = "HEAD";
+const std::string CATALOG_VARIABLES_FILENAME          = "catalog.var";
+const std::string ACCESSION_PREFIX_FILENAME           = "AccessionPrefixes.txt";
 
+enum class ImageCompression
+{
+    Lossy    = 1,
+    Lossless = 2
+};
+
+inline std::ostream& operator<<(std::ostream& o, ImageCompression val) { return o << (int)val; }
 
 using namespace std;
 using namespace std::tr2;
@@ -26,7 +34,7 @@ using namespace boost;
 using namespace SpotPluginApi;
 using namespace HostInterop;
 
-void MakeDefaultCatalogConfigDir(const sys::path& catalogDir);
+void MakeDefaultCatalogConfigDir(const sys::path& catalogDir, ImageCompression defaultCompression);
 
 enum Functions
 {
@@ -40,6 +48,7 @@ enum Functions
     FILE_EncodeForPath_T1_T5                = 8,
     FILE_DecodeFromPath_T1_T5B5             = 9,
     FILE_IsDirectroyEmptyOrMissing_T1_B5    = 10,
+    FILE_GetParentDirectory_T1_T5           = 11,
 
     TrimText_T1_T1                          = 20,
     SYS_GetDisplayResolution__N1N2          = 30,
@@ -55,7 +64,11 @@ enum Functions
     OpenImageCatalog_T1_T5B5                = 201,
     IsValidCatalog_T1_B5                    = 202,
     LockCase_T1_T5B5                        = 203,
-    UnlockCase_T1                           = 204
+    UnlockCase_T1                           = 204,
+    ImageCatalogDetails_T1_T5B5             = 205,
+    CatalogHasProperty_T1T2_B5              = 206,
+    SetCatalogProperty_T1T2T3               = 207,
+    GetCatalogProperty_T1T2_T5              = 208
 };
 
 static std::vector<std::string> lockedCases;
@@ -78,6 +91,11 @@ sys::path CatalogMainConfigFile(const sys::path& catalogPath)
 sys::path CatalogMainConfigFile()
 {
     return CatalogConfigDirectory() /= CATALOG_MAIN_CONFIG_FILENAME;
+}
+
+sys::path CatalogPrefsFile(const sys::path& catalogPath)
+{
+    return CatalogConfigDirectory(catalogPath) / sys::path(CATALOG_VARIABLES_FILENAME);
 }
 
 sys::path GetCaseLockFilePath(const std::string& caseId)
@@ -116,6 +134,7 @@ void UpdateCatalog(const sys::path& catalogPath)
 {
     string regexPostfix = "[\\w-]+\\.([jJ][pP][gG2])$";
     const char sectionDelimiters[] = {'-', '.'};
+    bool losslessFound = false;
     for(auto dirIter = sys::recursive_directory_iterator(catalogPath); dirIter != sys::recursive_directory_iterator(); ++dirIter)
     {
         if(dirIter.level() > 2)
@@ -147,12 +166,14 @@ void UpdateCatalog(const sys::path& catalogPath)
                 }
                 sys::path newName = path.parent_path();
                 newName /= fileName;
+                if (losslessFound && newName.extension() == ".jp2")
+                    losslessFound = true;
                 sys::rename(path, newName);
             }
         }
     }
     if ( !sys::exists(CatalogConfigDirectory(catalogPath)) )
-        MakeDefaultCatalogConfigDir(catalogPath);
+        MakeDefaultCatalogConfigDir(catalogPath, losslessFound ? ImageCompression::Lossless : ImageCompression::Lossy);
 }
 
 
@@ -185,9 +206,10 @@ bool CatalogNeedsToBeUpdated(const sys::path& catalogDir)
 }
 
 
-void MakeDefaultCatalogConfigDir(const sys::path& catalogDir)
+void MakeDefaultCatalogConfigDir(const sys::path& catalogDir, ImageCompression defaultCompression)
 {
     using boost::property_tree::ptree;
+    using std::chrono::system_clock;
 
     sys::path catalogConfig = CatalogConfigDirectory(catalogDir);
     bool createdDir = sys::create_directory(catalogConfig); // create_directory returns true if directory was created. If the directory already existed it will return false.
@@ -207,8 +229,25 @@ void MakeDefaultCatalogConfigDir(const sys::path& catalogDir)
         ptree configData;
         configData.put("details.version", 1);
         configData.put("details.uid", to_string(uuids::random_generator()()));
+        configData.put("details.created", system_clock::to_time_t(system_clock::now()));
         SavePropertyTree(CatalogMainConfigFile(catalogDir), configData);
+        ptree prefs;
+        prefs.put("image.compression", ImageCompression::Lossy);
+        SavePropertyTree(CatalogPrefsFile(catalogDir), prefs);
     }
+}
+
+size_t GetNumberOfCasesInCatalog(const sys::path& catalogDir)
+{
+    size_t count = 0;
+    auto dirIterator = sys::recursive_directory_iterator(catalogDir);
+    dirIterator.no_push();
+    for_each(dirIterator, sys::recursive_directory_iterator(), [&count](const sys::path& p)
+    {
+        if(sys::is_directory(p) && p.filename() != CONFIG_DIR_NAME)
+            ++count;
+    });
+    return count;
 }
 
 
@@ -265,7 +304,25 @@ bool SPOTPLUGINAPI SPOTPLUGIN_INIT_FUNC(host_action_func_t hostActionFunc, uintp
         replace(arg.begin(), arg.end(), '/', '\\');
         Returns::Text(5, arg);
     });
-    
+
+    dispatcher.SetAction(FILE_CreateDirectory_T1_B5, []()
+    {
+        bool createdDir = false;
+        try
+        {
+            createdDir = sys::create_directories(sys::path(Args::Text(1)));
+        }
+        catch (const sys::filesystem_error&)
+        {
+        }
+        Returns::Bool(createdDir);
+    });
+
+    dispatcher.SetAction(FILE_DeleteFile_T1_B5, []()
+    {
+        Returns::Bool(sys::remove(sys::path(Args::Text(1))));
+    });
+          
     // Checks if a file at path _argT1 exists
     dispatcher.SetAction(FILE_DoesFileExist_T1_B5, []()
     {
@@ -387,6 +444,7 @@ bool SPOTPLUGINAPI SPOTPLUGIN_INIT_FUNC(host_action_func_t hostActionFunc, uintp
                     success = false;
                     break;
                 }
+                ++cur;
             }
         }
         Returns::Bool(5, success);
@@ -402,6 +460,14 @@ bool SPOTPLUGINAPI SPOTPLUGIN_INIT_FUNC(host_action_func_t hostActionFunc, uintp
         Returns::Bool(!dirExits || (dirExits && sys::is_empty(dirToCheck)) );
     });
 
+    dispatcher.SetAction(FILE_GetParentDirectory_T1_T5, [] ()
+    {
+        auto dir = sys::path(Args::Text(1));
+        if (dir.filename() == ".")
+            dir.remove_filename();
+        Returns::Text(dir.parent_path());
+    });
+
     // Get the list of specimens within a case.
     // Returns:
     // _argN5 contains the count of items in the list
@@ -415,7 +481,7 @@ bool SPOTPLUGINAPI SPOTPLUGIN_INIT_FUNC(host_action_func_t hostActionFunc, uintp
             directory /= Args::Text(1); // Case ID
             transform_if(sys::directory_iterator(directory), sys::directory_iterator(), back_inserter(fileNames),
                          [] (const sys::path& item) { return item.filename();},
-                         [] (const sys::path& item) { return sys::is_directory(item); });
+                         [&] (const sys::path& item) { return sys::is_directory(directory/item); });
             sort(fileNames.begin(), fileNames.end());
         }
         catch(const std::system_error& ex)
@@ -453,6 +519,7 @@ bool SPOTPLUGINAPI SPOTPLUGIN_INIT_FUNC(host_action_func_t hostActionFunc, uintp
         Returns::Num(5, fileNames.size()); 
     });
 
+    ///
     dispatcher.SetAction(CreateImageCatalog_T1_T5B5, []()
     {
         bool success = false;
@@ -468,7 +535,7 @@ bool SPOTPLUGINAPI SPOTPLUGIN_INIT_FUNC(host_action_func_t hostActionFunc, uintp
             }
             else
                 sys::create_directories(catalogDir);
-            MakeDefaultCatalogConfigDir(catalogDir);
+            MakeDefaultCatalogConfigDir(catalogDir, ImageCompression::Lossy);
             success = true; 
         }
         catch(const std::exception& ex)
@@ -528,8 +595,8 @@ bool SPOTPLUGINAPI SPOTPLUGIN_INIT_FUNC(host_action_func_t hostActionFunc, uintp
             ofstream lockFileStream(lockFileName);
             lockFileStream << "User: " << HostInterop::GetTextVariable("CurUserName") << std::endl;
             time_t tt = system_clock::to_time_t(system_clock::now());
-            lockFileStream << "Locked On: " << ctime(&tt) << std::endl;
-            lockFileStream << "Id:" << to_string(uuids::random_generator()());
+            lockFileStream << "Locked On: " << ctime(&tt)
+                           << "Id: " << to_string(uuids::random_generator()());
             Returns::Bool(true);
         }
     });    
@@ -537,7 +604,8 @@ bool SPOTPLUGINAPI SPOTPLUGIN_INIT_FUNC(host_action_func_t hostActionFunc, uintp
     dispatcher.SetAction(UnlockCase_T1, []()
     {
         string caseName = Args::Text(1);
-        lockedCases.erase(find(lockedCases.begin(), lockedCases.end(), caseName));
+        auto item = remove(lockedCases.begin(), lockedCases.end(), caseName);
+        lockedCases.erase(item, lockedCases.end());
         sys::remove(GetCaseLockFilePath(caseName));
     });    
 
@@ -612,6 +680,67 @@ bool SPOTPLUGINAPI SPOTPLUGIN_INIT_FUNC(host_action_func_t hostActionFunc, uintp
             Returns::Text("The case "+ Args::Text(1) + " could not be found in the catalog.");
         Returns::Bool(success);
     });
+
+    
+
+    /// Gets a string that contains a human readable detail of the catalog configuration and settings.
+    /// Args:
+    ///     T1 - The path to the root of the catalog
+    /// Returns:
+    ///     T5 - A string that contains a detail of the catalog
+    ///     B5 - True if the path contains a valid catalog otherwise false.
+    dispatcher.SetAction(ImageCatalogDetails_T1_T5B5, []()
+    {
+        bool success = false;
+        ostringstream msg;
+        sys::path catalogPath = Args::Text(1);
+        try
+        {
+            if (IsValidCatalog(catalogPath))
+            {
+                sys::path configFile = CatalogMainConfigFile(catalogPath);
+                property_tree::ptree pt;
+                if(sys::exists(configFile))
+                    pt = GetPropertyTree(configFile);
+                time_t createdTime = pt.get<time_t>("details.createOn", last_write_time(catalogPath));
+                msg << "Version: " << pt.get("details.version", 0) << endl
+                    << "Uid: " << pt.get("details.uid", "<undefined>") << endl
+                    << "Created On: " << ctime(&createdTime)
+                    << "Case Count: " << GetNumberOfCasesInCatalog(catalogPath);
+                success = true;
+            }
+
+        }
+        catch(std::exception&)
+        {
+            success = false;
+        }
+        Returns::Bool(success);
+        Returns::Text(msg.str());
+    });
+
+    dispatcher.SetAction(CatalogHasProperty_T1T2_B5, []()
+    {
+        sys::path propFile = CatalogPrefsFile(Args::Text(1));
+        auto option = GetPropertyTree(propFile).get_optional<string>(Args::Text(2));
+        Returns::Bool(option.is_initialized());
+    });
+
+    dispatcher.SetAction(SetCatalogProperty_T1T2T3, []()
+    {
+        sys::path propFile = CatalogPrefsFile(Args::Text(1));
+        auto pt = GetPropertyTree(propFile);
+        pt.put(Args::Text(2), Args::Text(3));
+        SavePropertyTree(propFile, pt);
+    });
+
+    dispatcher.SetAction(GetCatalogProperty_T1T2_T5, []()
+    {
+        sys::path propFile = CatalogPrefsFile(Args::Text(1));
+        auto pt = GetPropertyTree(propFile);
+        Returns::Text(pt.get(Args::Text(2), ""));
+    });
+
 
 
     //===============================
