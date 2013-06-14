@@ -580,11 +580,11 @@ bool SPOTPLUGINAPI SPOTPLUGIN_INIT_FUNC(host_action_func_t hostActionFunc, uintp
 
     dispatcher.SetAction(LockCase_T1_T5B5, []()
     {
-        lockedCases.push_back(Args::Text(1));
-        sys::path lockFileName = GetCaseLockFilePath(lockedCases.back());
-        if(sys::exists(lockFileName))
+        string caseName = Args::Text(1);
+        sys::path lockFileName = GetCaseLockFilePath(caseName);
+        const bool lockFileExits = sys::exists(lockFileName);
+        if(lockFileExits)
         {
-            Returns::Bool(false);
             Returns::Text(ReadFileToString(lockFileName));
         }
         else
@@ -597,8 +597,9 @@ bool SPOTPLUGINAPI SPOTPLUGIN_INIT_FUNC(host_action_func_t hostActionFunc, uintp
             time_t tt = system_clock::to_time_t(system_clock::now());
             lockFileStream << "Locked On: " << ctime(&tt)
                            << "Id: " << to_string(uuids::random_generator()());
-            Returns::Bool(true);
+            lockedCases.push_back(caseName);
         }
+        Returns::Bool(!lockFileExits);
     });    
 
     dispatcher.SetAction(UnlockCase_T1, []()
